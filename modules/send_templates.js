@@ -1,15 +1,15 @@
-import axios  from "axios";
+// module to send templates
 
-export default async function sendMessage(sender_psid, response, cb=false, rep) {
-  // Construct the message body
-  let request_body = {
-    "messaging_type": "RESPONSE",
-    "recipient": {
-      "id": sender_psid
-    },
-    "message": response
+import axios from "axios";
+
+export default async function sendTemplates (senderId, template) {
+  const request_body = {
+    "recipient": {"id": senderId},
+    "message":{
+      "attachment": template
+    }
   };
-  
+
   let resp = await axios.post(
     'https://graph.facebook.com/v17.0/me/messages',
     request_body,
@@ -21,7 +21,5 @@ export default async function sendMessage(sender_psid, response, cb=false, rep) 
   .catch(error => {
     console.log('Error sending message:', error.response.data.error.message);
   });
-
-  resp = await resp.data;
-  console.log(resp);
-};
+}; // end of sendTemplates
+ 
