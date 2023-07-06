@@ -25,8 +25,7 @@ import {
 // function to respond to unexpected message
 export async function defaultMessageHandler (event) {
   const senderId = event.sender.id;
-  let usersAction = await fsP.readFile("files/user_next_action.json");
-  usersAction = JSON.parse(usersAction);
+  let usersAction = readUsersAction();
   let email = usersAction[senderId]["email"];
 
   if (email) {

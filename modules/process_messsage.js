@@ -34,6 +34,7 @@ export default async function processMessage (event, res) {
   
   //  checking if it's a new user
   if (!usersAction[senderId]) {
+    console.log("new user");
     return sendNewConversationResponse(event);
   };
   

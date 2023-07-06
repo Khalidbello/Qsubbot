@@ -37,7 +37,7 @@ export async function sendNewConversationResponse (event) {
   //fsp.writeFile("files/user_prev_action.js");
   
   let response = {
-    "text": `Hy am SubBot. \BotSub virtual assitance.`
+    "text": `Hy 9 am SubBot. \nBotSub virtual assitance.`
   };
   await sendMessage(senderId, response);
   
@@ -46,7 +46,7 @@ export async function sendNewConversationResponse (event) {
   };
   await sendMessage(senderId, response); 
   
-  message = "You will recieve your transaction receipts through your email.";
+  let message = "You will recieve your transaction receipts through your email.";
   response = { text: message };
   await sendMessage(senderId, response); 
 
@@ -56,7 +56,8 @@ export async function sendNewConversationResponse (event) {
   usersAction[senderId]["nextAction"] = "toEnterEmail";
   usersAction[senderId]["firstTime"] = true; 
   
-  writeUsersAction(usersAction);
+  await writeUsersAction(usersAction);
+  console.log("e d of new c")
 }; // end of newConversationResponse
 
 
