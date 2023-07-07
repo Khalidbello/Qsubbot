@@ -1,6 +1,10 @@
 import {default as fs } from "node:fs";   
 const fsP = fs.promises;
 
+import CyclicDb from "@cyclic.sh/dynamodb";
+
+const db = CyclicDb(process.env.DATABASE);
+
 import 
   {
     sendNewConversationResponse, 
@@ -23,12 +27,11 @@ import
 
 export default async function processPostback (event, res) {
   // first set nextAction to null
-  let usersAction = await fsP.readFile("files/user_next_action.json");
-  usersAction = JSON.parse(usersAction);
-  usersAction[event.sender.id]["nextAction"] = null;
-   
-  usersAction = JSON.stringify(usersAction);
-  await fsP.writeFile("files/user_next_action.json", usersAction);  
+  const usersAction = db.collection(process.env.COLLECTION1);
+
+  await usersAction.UpdateItem(event.sender.id, {
+    nextAction: null,
+  });
   
   if (event.postback.payload == "newConversation") {
     return sendNewConversationResponse(event);

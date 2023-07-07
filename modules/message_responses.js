@@ -2,14 +2,21 @@
 import {default as fs } from "node:fs";   
 const fsP = fs.promises;
 
+import CyclicDb from "@cyclic.sh/dynamodb";
+
+const db = CyclicDb(process.env.DATABASE);
+
 import emailValidator from "email-validator";
+
 import sendMessage from "./send_message.js";
+
 import { sendNewConversationResponse } from "./postback_responses.js";
+
 import sendTemplate from "./send_templates.js";
+
 import { responseServices } from "./templates.js";
+
 import { 
-  writeUsersAction,
-  readUsersAction,
   noTransactFound,
   validateNumber,
   confirmDataPurchaseResponse,
@@ -25,8 +32,9 @@ import {
 // function to respond to unexpected message
 export async function defaultMessageHandler (event) {
   const senderId = event.sender.id;
-  let usersAction = readUsersAction();
-  let email = usersAction[senderId]["email"];
+  const usersAction = db.collection(process.env.COLLECTION1);
+  
+  let {props: email} = usersAction.get(senderId);
 
   if (email) {
     await sendMessage(senderId, {text: "Hy what can i do for you"})
@@ -39,25 +47,25 @@ export async function defaultMessageHandler (event) {
 
 // function to handle first email
 export async function sendEmailEnteredResponse(event) {
-  let usersAction = await readUsersAction();
+  const usersAction = db.collection(process.env.COLLECTION1);
+  
   const email = event.message.text;
   const senderId = event.sender.id;
   
   if ( emailValidator.validate(email) ) {
-    usersAction[senderId]["email"] = email;
-    usersAction[senderId]["nextAction"] = null;
+    // updatimg database
+    await usersAction.set(senderId,{
+      email: email,
+      nextAction: null,
+    });
     
     const response = {
       text: "email saved \nYou can change email when ever you want"
     };
     await sendMessage(senderId, response);
     
-    if (usersAction[senderId]["firstTime"] == true) {
-      usersAction[senderId]["firstTime"] = false;
-      await writeUsersAction(usersAction);
-      await sendMessage(senderId, { text: "below are list of services i can offer"});
-      sendTemplate(senderId, responseServices);
-    };
+    await sendMessage(senderId, { text: "below are list of services i can offer"});
+    sendTemplate(senderId, responseServices);
   } else {
     const response = {
       text: "the email format you entered is invalid \nPlease enter a valid email."
@@ -78,16 +86,19 @@ export async function sendEmailEnteredResponse(event) {
 export async function sendAirtimeAmountReceived (event) {
   const senderId = event.sender.id;
   const amount = event.message.text.trim();
-  let usersAction = await readUsersAction();
+  const usersAction = db.collection(process.env.COLLECTION1);
   //console.log("number validation", await validateAmount(amount));
   
   if (await validateAmount(amount)) {
     await sendMessage(senderId, {text: "Amount recieved"});
-    usersAction[senderId]["nextAction"] = "phoneNumber";
-    usersAction[senderId]["purchasePayload"]["productName"] = usersAction[senderId]["purchasePayload"]["network"]
-      + " airtime";
-    usersAction[senderId]["purchasePayload"]["price"] = amount;
-    await writeUsersAction(usersAction);
+    await usersAction.UpdateItem(senderId, {
+      nextAction: "phoneNumber",
+      purchasePayload: {
+        productName: "okk",
+        price: amount
+      },
+    });
+    
     await sendMessage(senderId, {text: "Enter phone number for airtime purchase. \nEnter Q to cancel"});
     return null;
   };
@@ -100,15 +111,16 @@ export async function sendAirtimeAmountReceived (event) {
 export async function sendPhoneNumberEnteredResponses (event) {
   const senderId = event.sender.id;
   const phoneNumber = event.message.text.trim(); 
-  let usersAction = await readUsersAction();
+  const usersAction = db.collection(process.env.COLLECTION1);
   
   const validatedNum = validateNumber(phoneNumber);
   
   if (validatedNum) {
     await sendMessage(senderId, {text: "phone  number recieved"});
-    usersAction[senderId]["nextAction"] = null;
-    usersAction[senderId]["phoneNumber"] = phoneNumber;
-    await writeUsersAction(usersAction);
+    await usersAction.update(senderId, {
+      nextAction: null,
+      phoneNumber: phoneNumber,
+    });
     await confirmDataPurchaseResponse(senderId);  
     return null;
   };
@@ -118,18 +130,20 @@ export async function sendPhoneNumberEnteredResponses (event) {
 
 // function to handle change of email before transaction
 export async function newEmailBeforeTransactResponse (event, transactionType) {
-  let usersAction = await readUsersAction();
+  const usersAction = db.collection(process.env.COLLECTION1);
   const email = event.message.text;
   const senderId = event.sender.id;
-  const purchasePayload =  usersAction[senderId]["purchasePayload"];
+  const props =  await usersAction.get(senderId).props;
   
-  if (!purchasePayload) return noTransactFound(senderId);
+  if (!props.purchasePayload) return noTransactFound(senderId);
   
   if ( emailValidator.validate(email) ) {
-    usersAction[senderId]["email"] = email;
-    usersAction[senderId]["nextAction"] = null;
-    await writeUsersAction(usersAction);
-    
+    // updating database 
+    await usersAction.UpdateItem(senderId, {
+      email: email,
+      nextAction: null,  
+    });
+
     await sendMessage(senderId, {text: "Email changed successfully."});
     // peform next action dependent on trasactionType
     if (transactionType === "data") {
@@ -148,16 +162,19 @@ export async function newEmailBeforeTransactResponse (event, transactionType) {
 
 // function to handle change of phoneNumber
 export async function newPhoneNumberBeforeTransactResponse (event, transactionType) {
-  let usersAction = await readUsersAction();
+  const usersAction = db.collection(process.env.COLLECTION1);
   const phoneNumber = event.message.text;
   const senderId = event.sender.id;
-  const purchasePayload =  usersAction[senderId]["purchasePayload"];
+  const props = await usersAction.get(senderId).props;
   
-  if (!purchasePayload) return noTransactFound(senderId);
+  if (!props.purchasePayload) return noTransactFound(senderId);
+  
   if ( validateNumber(phoneNumber) ) {
-    usersAction[senderId]["phoneNumber"] = phoneNumber;
-    usersAction[senderId]["nextAction"] = null;
-    await writeUsersAction(usersAction);
+    // updating database
+    usersAction.UpdateItem(senderId, {
+      phoneNumber: phoneNumber,
+      nextAction: null,
+    });
     
     await sendMessage(senderId, {text: "Phone number changed successfully"});
     // peform next action dependent on trasactionType

@@ -1,16 +1,22 @@
-import {default as fs } from "node:fs";   
-const fsP = fs.promises;
+/*import {default as fs } from "node:fs";   
+const fsP = fs.promises;*/
+import CyclicDb from "@cyclic.sh/dynamodb";
+
+const db = CyclicDb(process.env.DATABASE); 
 
 import sendMessage from "./send_message.js";
+
 import sendTemplate from "./send_templates.js";
+
 import getUsername from "./get_username.js";
+
 import axios from "axios";
+
 import { 
   dateFormatter,
-  readUsersAction,
-  writeUsersAction,
   noTransactFound,
-} from "./helper_functions.js"
+} from "./helper_functions.js";
+
 import 
   { 
     responseServices,
@@ -31,10 +37,12 @@ export async function sendNewConversationResponse (event) {
   const senderId = event.sender.id;
   //const userName = await getUsername(senderId);
   
-  let usersAction = await readUsersAction();
-  usersAction[senderId] = {};
-
-  //fsp.writeFile("files/user_prev_action.js");
+  const usersAction = db.collection(process.env.COLLECTION1);
+  
+  await usersAction.set(senderId, {
+    nextAction: "toEnterEmail",
+    firstTime: true,
+  });
   
   let response = {
     "text": `Hy 9 am SubBot. \nBotSub virtual assitance.`
@@ -53,11 +61,7 @@ export async function sendNewConversationResponse (event) {
   response =  { text: "You can change the email when ever you want." };
   sendMessage(senderId, response); 
 
-  usersAction[senderId]["nextAction"] = "toEnterEmail";
-  usersAction[senderId]["firstTime"] = true; 
-  
-  await writeUsersAction(usersAction);
-  console.log("e d of new c")
+  console.log("end of new conversation")
 }; // end of newConversationResponse
 
 
@@ -134,15 +138,17 @@ export async function sendNineMobileOffers (event) {
 // function to respond when an offer is selected
 export async function offerSelected(event, payload) {
   const senderId = event.sender.id;
+  const usersAction = db(process.env.COLLECTION1);
   const message = {
     text: "Enter phone number to deliver value to"
   };
 
-  let usersAction = await readUsersAction();
-  usersAction[senderId]["nextAction"] = "phoneNumber";
-  usersAction[senderId]["purchasePayload"] = payload;
-
-  await writeUsersAction(usersAction);
+  const props = await usersAction.get(senderId).props;
+  await usersAction.UpdateItem(senderId, {
+    nextAction: "phoneNumber",
+    purchasePayload: payload,
+  });
+  
   await sendMessage(senderId, message);
 }; // end of offerSelected
 
@@ -166,13 +172,15 @@ export async function sendPurchaseAirtimeResponse(event) {
 // function to handdle mtnAirtime
 export async function airtimePurchase(event, payload) {
   const senderId = event.sender.id;
-  const usersAction = await readUsersAction();
+  const usersAction = db(process.env.COLLECTION1);
   console.log("in airtime purchase");
 
   await sendMessage(senderId, {text: `Enter ${payload.network} airtime amount`});
-  usersAction[senderId]["nextAction"] = "enterAirtimeAmount";
-  usersAction[senderId]["purchasePayload"] = payload;
-  await writeUsersAction(usersAction);
+  // updating database
+  await usersAction.UpdateItem(senderId, {
+    nextAction: "enterAirtimeAmount",
+    purchasePayload: payload
+  });
 }; // end of mtnAirtimePurchase
 
 
@@ -183,11 +191,13 @@ export async function airtimePurchase(event, payload) {
 
 export async function issueReport (event) {
   const senderId = event.sender.id; 
-  let usersAction = await readUsersAction();
+  const usersAction = db(process.env.COLLECTION1);
 
-  usersAction[senderId]["nextAction"] = "enterIssue";
-  await writeUsersAction(usersAction);
-  await sendMessage(senderId, {text: "Pls enter a detailed explation of your issue" })
+  await sendMessage(senderId, {text: "Pls enter a detailed explation of your issue" });
+  // updating database
+  await usersAction.UpdateItem(senderId, {
+    nextAction: "enterIssue",
+  });
 };
 
 
@@ -199,19 +209,19 @@ export async function issueReport (event) {
 export async function generateAccountNumber (event) {
   let returnFalse;
   const senderId = event.sender.id;
-  let usersAction = await readUsersAction();
-  let purchasePayload = usersAction[senderId]["purchasePayload"];
-  //console.log(payload);
-  //payload = JSON.parse(payload);
+  const usersAction = db(process.env.COLLECTION1);
+  
+  const props = await usersAction.get(senderId).props;
+  
+  if (!props.purchasePayload) return noTransactFound(senderId);
 
-  if (!purchasePayload) return noTransactFound(senderId);
+  props.purchasePayload.email = props.email;
+  props.purchasePayload.phoneNumber = props.phoneNumber;
+  console.log(props.purchasePayload);
 
-  purchasePayload["email"] = usersAction[senderId]["email"];
-  purchasePayload["phoneNumber"] = usersAction[senderId]["phoneNumber"];
-  console.log(purchasePayload);
   let response = await axios.post(
     `https://${process.env.HOST}/gateway/transfer-account`,
-    purchasePayload,
+    props.purchasePayload,
   )
   .catch(error => {
     returnFalse = true;
@@ -250,17 +260,17 @@ export async function generateAccountNumber (event) {
 // function to chanege email b4 transaction
 export async function changeMailBeforeTransact (event) {
   const senderId = event.sender.id;
-  let usersAction = await readUsersAction();
-  const purchasePayload =  usersAction[senderId]["purchasePayload"];
+  const usersAction = db(process.env.COLLECTION1);
   
-  if (!purchasePayload) {
-    usersAction[senderId]["nextAction"] = null;
-    writeUsersAction(usersAction);
+  const props =  usersAction.get(senderId).props;
+  
+  if (!props.purchasePayload) {
+    // updating database
+    await usersAction.UpdateItem(senderId, {nextAction: null});
     return noTransactFound(senderId);
   };
 
-  usersAction[senderId]["nextAction"] = "changeEmailBeforeTransact";
-  writeUsersAction(usersAction);
+  await usersAction.UpdateItem(senderId, {nextAction: "changeEmailBeforeTransact"});
   
   sendMessage(senderId, {text: "Enter new email \n\nEnter Q to cancel"});
 }; // end of changeMailBeforeTransact
@@ -272,17 +282,17 @@ export async function changeMailBeforeTransact (event) {
 // function to changePhoneNumber 
 export async function changePhoneNumber (event) {
   const senderId = event.sender.id;
-  let usersAction = await readUsersAction();
-  const purchasePayload =  usersAction[senderId]["purchasePayload"];
+  const usersAction = db(process.env.COLLECTION1);
   
-  if (!purchasePayload) {
-    usersAction[senderId]["nextAction"] = null;
-    writeUsersAction(usersAction);
+  const props =  await usersAction.get(senderId).props;
+  
+  if (!props.purchasePayload) {
+    // updatimg database
+    await usersAction.UpdateItem(sederId, { nextAction: null });
     return noTransactFound(senderId);
   };
 
-  usersAction[senderId]["nextAction"] = "changePhoneNumberBeforeTransact";
-  await writeUsersAction(usersAction);
+  await usersAction.UpdateItem(sederId, { nextAction: "changePhoneNumberBeforeTransact" });
   
   sendMessage(senderId, {text: "Enter new phone number \n\nEnter Q to cancel"});
 }; // end of changeMailBeforeTransact
@@ -293,11 +303,11 @@ export async function changePhoneNumber (event) {
 // function to cancel transaction
 export async function cancelTransaction (event, end=false) {
   const senderId = event.sender.id;
-  let usersAction = await readUsersAction();
+   const usersAction = db(process.env.COLLECTION1);
 
-  usersAction[senderId]["nextAction"] = null;
-  delete usersAction[senderId]["purchasePayload"];
-  await  writeUsersAction(usersAction);
+  
+  // delete purchase payload here
+  
   
   if (end) {
     await sendMessage(senderId, {text: "Transaction Concluded"});
